@@ -1,0 +1,374 @@
+{
+  "entities": {
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Trusted administrator account allowed to verify workers, payments, and moderate jobs.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Private user account profile containing contact phone and neighborhood preferences.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 20,
+          "pattern": "^$|^[0-9+\\-\\s]{6,20}$"
+        },
+        "area": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "isWorker": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "email", "phone", "area", "isWorker", "createdAt", "updatedAt"]
+    },
+    "WorkerProfile": {
+      "title": "WorkerProfile",
+      "description": "Public directory profile for registered local workers and service providers without PII.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "area": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "categories": {
+          "type": "array",
+          "description": "Allowed values: hospital_guide, school_escort, general_guide, bodyguard_bouncer, technician_mistri"
+        },
+        "baseCharge": {
+          "type": "number"
+        },
+        "experienceYears": {
+          "type": "number"
+        },
+        "bio": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 400
+        },
+        "isActive": {
+          "type": "boolean"
+        },
+        "isVerified": {
+          "type": "boolean"
+        },
+        "completedJobs": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "name", "area", "categories", "baseCharge", "experienceYears", "bio", "isActive", "completedJobs", "createdAt", "updatedAt"]
+    },
+    "EmergencyJob": {
+      "title": "EmergencyJob",
+      "description": "Emergency local service request supporting bidding and fixed-rate direct booking plus payment status.",
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "category": {
+          "type": "string",
+          "enum": ["hospital_guide", "school_escort", "general_guide", "bodyguard_bouncer", "technician_mistri"]
+        },
+        "bookingMode": {
+          "type": "string",
+          "enum": ["bidding", "fixed"]
+        },
+        "city": {
+          "type": "string",
+          "enum": ["dhaka", "narayanganj"]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 1200
+        },
+        "area": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["immediate", "today", "scheduled"]
+        },
+        "suggestedCharge": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["open", "assigned", "completed", "cancelled"]
+        },
+        "assignedWorkerId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "assignedWorkerName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80
+        },
+        "acceptedCharge": {
+          "type": "number"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["unselected", "cash", "bkash", "nagad", "bank"]
+        },
+        "paymentStatus": {
+          "type": "string",
+          "enum": ["unpaid", "pending_verification", "paid"]
+        },
+        "paymentTrxId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 60
+        },
+        "paidAmount": {
+          "type": "number"
+        },
+        "bidCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "clientId",
+        "clientName",
+        "category",
+        "title",
+        "description",
+        "area",
+        "urgency",
+        "suggestedCharge",
+        "status",
+        "assignedWorkerId",
+        "assignedWorkerName",
+        "acceptedCharge",
+        "bidCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "JobPrivateContact": {
+      "title": "JobPrivateContact",
+      "description": "Isolated PII document storing exact house address and contact phone for an emergency job.",
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "contactPhone": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 20,
+          "pattern": "^[0-9+\\-\\s]{6,20}$"
+        },
+        "exactAddress": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 250
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["clientId", "contactPhone", "exactAddress", "createdAt", "updatedAt"]
+    },
+    "JobBid": {
+      "title": "JobBid",
+      "description": "Worker bid on an open emergency job specifying proposed charge amount and arrival time.",
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "jobClientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "workerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "workerName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "workerArea": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "chargeAmount": {
+          "type": "number"
+        },
+        "estimatedArrival": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "note": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 400
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "rejected"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "jobId",
+        "jobClientId",
+        "workerId",
+        "workerName",
+        "workerArea",
+        "chargeAmount",
+        "estimatedArrival",
+        "note",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Administrator registry for Sheba24 marketplace moderation."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccount" },
+      "description": "Private user account records with phone and email isolated to owner."
+    },
+    "/workers/{workerId}": {
+      "schema": { "$ref": "#/entities/WorkerProfile" },
+      "description": "Public directory of registered service providers without PII."
+    },
+    "/jobs/{jobId}": {
+      "schema": { "$ref": "#/entities/EmergencyJob" },
+      "description": "Emergency local service requests available for worker bidding or fixed-rate booking."
+    },
+    "/jobs/{jobId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/JobPrivateContact" },
+      "description": "Isolated PII contact details (phone and exact address) readable only by owner, assigned worker, and admin."
+    },
+    "/jobs/{jobId}/bids/{bidId}": {
+      "schema": { "$ref": "#/entities/JobBid" },
+      "description": "Bids submitted by workers on an emergency job with proposed charge amount."
+    }
+  }
+}

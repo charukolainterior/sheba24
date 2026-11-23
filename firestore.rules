@@ -1,0 +1,445 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core helper primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    // Zero-DB-read admin check for list queries (Pillar 8 compliant)
+    function isBootstrapAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'charukolainterior@gmail.com';
+    }
+
+    // Full admin check for single-document get/write operations
+    function isAdmin() {
+      return isBootstrapAdmin() || (
+        isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidCategory(cat) {
+      return cat in ['hospital_guide', 'school_escort', 'general_guide', 'bodyguard_bouncer', 'technician_mistri'];
+    }
+
+    // Validation Blueprint: UserAccount
+    function isValidUserAccount(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'phone', 'area', 'isWorker', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'email', 'phone', 'area', 'isWorker', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 120
+        && data.phone is string && data.phone.size() <= 20 && data.phone.matches('^$|^[0-9+\\-\\s]{6,20}$')
+        && data.area is string && data.area.size() <= 80
+        && data.isWorker is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: WorkerProfile
+    function isValidWorkerProfile(data, workerId) {
+      return data.keys().hasAll(['uid', 'name', 'area', 'categories', 'baseCharge', 'experienceYears', 'bio', 'isActive', 'completedJobs', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'name', 'area', 'categories', 'baseCharge', 'experienceYears', 'bio', 'isActive', 'isVerified', 'completedJobs', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == workerId
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 80
+        && data.area is string && data.area.size() >= 2 && data.area.size() <= 80
+        && data.categories is list
+        && data.categories.size() >= 1 && data.categories.size() <= 5
+        && data.categories[0] is string
+        && data.categories.hasOnly(['hospital_guide', 'school_escort', 'general_guide', 'bodyguard_bouncer', 'technician_mistri'])
+        && (data.baseCharge is int || data.baseCharge is float) && data.baseCharge >= 100 && data.baseCharge <= 100000
+        && (data.experienceYears is int || data.experienceYears is float) && data.experienceYears >= 0 && data.experienceYears <= 60
+        && data.bio is string && data.bio.size() >= 5 && data.bio.size() <= 400
+        && data.isActive is bool
+        && (!('isVerified' in data.keys()) || data.isVerified is bool)
+        && (data.completedJobs is int || data.completedJobs is float) && data.completedJobs >= 0 && data.completedJobs <= 100000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: EmergencyJob
+    function isValidEmergencyJob(data) {
+      return data.keys().hasAll([
+          'clientId', 'clientName', 'category', 'title', 'description',
+          'area', 'urgency', 'suggestedCharge', 'status',
+          'assignedWorkerId', 'assignedWorkerName', 'acceptedCharge',
+          'bidCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'clientId', 'clientName', 'category', 'title', 'description',
+          'area', 'urgency', 'suggestedCharge', 'status',
+          'assignedWorkerId', 'assignedWorkerName', 'acceptedCharge',
+          'bidCount', 'createdAt', 'updatedAt',
+          'bookingMode', 'city', 'paymentMethod', 'paymentStatus', 'paymentTrxId', 'paidAmount'
+        ])
+        && isValidId(data.clientId)
+        && data.clientName is string && data.clientName.size() >= 2 && data.clientName.size() <= 80
+        && data.category is string && isValidCategory(data.category)
+        && (!('bookingMode' in data.keys()) || data.bookingMode in ['bidding', 'fixed'])
+        && (!('city' in data.keys()) || data.city in ['dhaka', 'narayanganj'])
+        && data.title is string && data.title.size() >= 5 && data.title.size() <= 120
+        && data.description is string && data.description.size() >= 10 && data.description.size() <= 1200
+        && data.area is string && data.area.size() >= 2 && data.area.size() <= 80
+        && data.urgency in ['immediate', 'today', 'scheduled']
+        && (data.suggestedCharge is int || data.suggestedCharge is float) && data.suggestedCharge >= 100 && data.suggestedCharge <= 500000
+        && data.status in ['open', 'assigned', 'completed', 'cancelled']
+        && data.assignedWorkerId is string && data.assignedWorkerId.size() <= 128
+        && data.assignedWorkerName is string && data.assignedWorkerName.size() <= 80
+        && (data.acceptedCharge is int || data.acceptedCharge is float) && data.acceptedCharge >= 0 && data.acceptedCharge <= 500000
+        && (!('paymentMethod' in data.keys()) || data.paymentMethod in ['unselected', 'cash', 'bkash', 'nagad', 'bank'])
+        && (!('paymentStatus' in data.keys()) || data.paymentStatus in ['unpaid', 'pending_verification', 'paid'])
+        && (!('paymentTrxId' in data.keys()) || (data.paymentTrxId is string && data.paymentTrxId.size() <= 60))
+        && (!('paidAmount' in data.keys()) || ((data.paidAmount is int || data.paidAmount is float) && data.paidAmount >= 0 && data.paidAmount <= 500000))
+        && (data.bidCount is int || data.bidCount is float) && data.bidCount >= 0 && data.bidCount <= 1000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: JobPrivateContact
+    function isValidJobPrivateContact(data) {
+      return data.keys().hasAll(['clientId', 'contactPhone', 'exactAddress', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['clientId', 'contactPhone', 'exactAddress', 'createdAt', 'updatedAt'])
+        && isValidId(data.clientId)
+        && data.contactPhone is string && data.contactPhone.size() >= 6 && data.contactPhone.size() <= 20 && data.contactPhone.matches('^[0-9+\\-\\s]{6,20}$')
+        && data.exactAddress is string && data.exactAddress.size() >= 5 && data.exactAddress.size() <= 250
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: JobBid
+    function isValidJobBid(data, jobId, bidId) {
+      return data.keys().hasAll(['jobId', 'jobClientId', 'workerId', 'workerName', 'workerArea', 'chargeAmount', 'estimatedArrival', 'note', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['jobId', 'jobClientId', 'workerId', 'workerName', 'workerArea', 'chargeAmount', 'estimatedArrival', 'note', 'status', 'createdAt', 'updatedAt'])
+        && isValidId(data.jobId) && data.jobId == jobId
+        && isValidId(data.jobClientId)
+        && isValidId(data.workerId) && data.workerId == bidId
+        && data.workerName is string && data.workerName.size() >= 2 && data.workerName.size() <= 80
+        && data.workerArea is string && data.workerArea.size() >= 2 && data.workerArea.size() <= 80
+        && (data.chargeAmount is int || data.chargeAmount is float) && data.chargeAmount >= 100 && data.chargeAmount <= 500000
+        && data.estimatedArrival is string && data.estimatedArrival.size() >= 2 && data.estimatedArrival.size() <= 60
+        && data.note is string && data.note.size() <= 400
+        && data.status in ['pending', 'accepted', 'rejected']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // 0. Admin Registry
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isBootstrapAdmin();
+      allow create, update: if isAdmin()
+        && isValidId(adminId)
+        && incoming().keys().hasAll(['uid', 'email', 'createdAt'])
+        && incoming().keys().hasOnly(['uid', 'email', 'createdAt'])
+        && incoming().uid == adminId
+        && incoming().email is string && incoming().email.size() >= 3 && incoming().email.size() <= 120
+        && incoming().createdAt is timestamp;
+      allow delete: if isAdmin() && isValidId(adminId);
+    }
+
+    // 1. Private User Accounts
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if false;
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserAccount(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserAccount(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phone', 'area', 'isWorker', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // 2. Public Worker Directory (no PII)
+    match /workers/{workerId} {
+      allow get: if isValidId(workerId) && isSignedIn() && (existing().isActive == true || isOwner(workerId) || isAdmin());
+      allow list: if isSignedIn() && (existing().isActive == true || existing().uid == request.auth.uid || isBootstrapAdmin());
+      allow create: if isVerifiedUser()
+        && isValidId(workerId)
+        && isOwner(workerId)
+        && isValidWorkerProfile(incoming(), workerId)
+        && incoming().uid == request.auth.uid
+        && (!('isVerified' in incoming().keys()) || incoming().isVerified == false)
+        && incoming().completedJobs == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser()
+        && isValidId(workerId)
+        && isValidWorkerProfile(incoming(), workerId)
+        && incoming().uid == existing().uid
+        && incoming().completedJobs == existing().completedJobs
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Worker edits their own profile (cannot self-verify)
+          (
+            isOwner(workerId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'area', 'categories', 'baseCharge', 'experienceYears', 'bio', 'isActive', 'updatedAt'])
+          )
+          ||
+          // Admin moderates verification or active status
+          (
+            isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'isActive', 'updatedAt'])
+          )
+        );
+      allow delete: if false;
+    }
+
+    // 3. Emergency Jobs (Bidding + Fixed-Rate Booking + Payment Tracking)
+    match /jobs/{jobId} {
+      allow get: if isValidId(jobId) && isSignedIn() && (
+        existing().status == 'open' ||
+        existing().clientId == request.auth.uid ||
+        existing().assignedWorkerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        existing().status == 'open' ||
+        existing().clientId == request.auth.uid ||
+        existing().assignedWorkerId == request.auth.uid ||
+        isBootstrapAdmin()
+      );
+      allow create: if isVerifiedUser()
+        && isValidId(jobId)
+        && isValidEmergencyJob(incoming())
+        && incoming().clientId == request.auth.uid
+        && incoming().status == 'open'
+        && incoming().assignedWorkerId == ''
+        && incoming().assignedWorkerName == ''
+        && incoming().acceptedCharge == 0
+        && (!('paymentStatus' in incoming().keys()) || incoming().paymentStatus == 'unpaid')
+        && (!('paidAmount' in incoming().keys()) || incoming().paidAmount == 0)
+        && incoming().bidCount == 0
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/jobs/$(jobId)/private/contact);
+
+      allow update: if isVerifiedUser()
+        && isValidId(jobId)
+        && isValidEmergencyJob(incoming())
+        && incoming().clientId == existing().clientId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Admin moderation & payment verification override
+          (
+            isAdmin()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paymentStatus', 'paidAmount', 'updatedAt'])
+          )
+          ||
+          // Non-terminal job lifecycle transitions
+          (
+            !(existing().status in ['completed', 'cancelled']) && (
+              // Action 1: Client edits open job details
+              (
+                existing().clientId == request.auth.uid
+                && existing().status == 'open'
+                && incoming().status == 'open'
+                && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'bookingMode', 'city', 'title', 'description', 'area', 'urgency', 'suggestedCharge', 'updatedAt'])
+              )
+              ||
+              // Action 2: Client cancels open job
+              (
+                existing().clientId == request.auth.uid
+                && existing().status == 'open'
+                && incoming().status == 'cancelled'
+                && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              )
+              ||
+              // Action 3: Client accepts a worker bid (assigns job at bid's exact chargeAmount)
+              (
+                existing().clientId == request.auth.uid
+                && existing().status == 'open'
+                && incoming().status == 'assigned'
+                && isValidId(incoming().assignedWorkerId)
+                && incoming().assignedWorkerName.size() >= 2
+                && incoming().acceptedCharge >= 100
+                && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedWorkerId', 'assignedWorkerName', 'acceptedCharge', 'updatedAt'])
+                && exists(/databases/$(database)/documents/jobs/$(jobId)/bids/$(incoming().assignedWorkerId))
+                && get(/databases/$(database)/documents/jobs/$(jobId)/bids/$(incoming().assignedWorkerId)).data.chargeAmount == incoming().acceptedCharge
+              )
+              ||
+              // Action 3B: Registered worker directly books a fixed-rate open job
+              (
+                existing().clientId != request.auth.uid
+                && existing().status == 'open'
+                && 'bookingMode' in existing().keys()
+                && existing().bookingMode == 'fixed'
+                && incoming().status == 'assigned'
+                && incoming().assignedWorkerId == request.auth.uid
+                && incoming().assignedWorkerName.size() >= 2
+                && incoming().acceptedCharge == existing().suggestedCharge
+                && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'assignedWorkerId', 'assignedWorkerName', 'acceptedCharge', 'updatedAt'])
+                && exists(/databases/$(database)/documents/workers/$(request.auth.uid))
+              )
+              ||
+              // Action 4: Client marks assigned job as completed
+              (
+                existing().clientId == request.auth.uid
+                && existing().status == 'assigned'
+                && incoming().status == 'completed'
+                && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              )
+              ||
+              // Action 5: Registered worker submits a new bid atomically incrementing bidCount by 1
+              (
+                existing().clientId != request.auth.uid
+                && existing().status == 'open'
+                && incoming().bidCount == existing().bidCount + 1
+                && incoming().diff(existing()).affectedKeys().hasOnly(['bidCount', 'updatedAt'])
+                && exists(/databases/$(database)/documents/workers/$(request.auth.uid))
+                && !exists(/databases/$(database)/documents/jobs/$(jobId)/bids/$(request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/jobs/$(jobId)/bids/$(request.auth.uid))
+              )
+            )
+          )
+          ||
+          // Payment Actions (allowed while assigned or completed, until paid)
+          (
+            existing().status in ['assigned', 'completed']
+            && (!('paymentStatus' in existing().keys()) || existing().paymentStatus != 'paid')
+            && (
+              // Action 6: Client submits payment method / TrxID (cannot self-mark paid)
+              (
+                existing().clientId == request.auth.uid
+                && incoming().paymentStatus in ['unpaid', 'pending_verification']
+                && incoming().paidAmount == existing().acceptedCharge
+                && incoming().diff(existing()).affectedKeys().hasOnly(['paymentMethod', 'paymentStatus', 'paymentTrxId', 'paidAmount', 'updatedAt'])
+              )
+              ||
+              // Action 7: Assigned worker confirms cash/digital payment received
+              (
+                existing().assignedWorkerId == request.auth.uid
+                && incoming().paymentStatus == 'paid'
+                && incoming().paidAmount == existing().acceptedCharge
+                && incoming().diff(existing()).affectedKeys().hasOnly(['paymentStatus', 'paidAmount', 'updatedAt'])
+              )
+            )
+          )
+        );
+      allow delete: if false;
+
+      // 4. Isolated Private Contact Info for Job
+      match /private/{docId} {
+        allow get: if isValidId(jobId) && docId == 'contact' && isSignedIn() && (
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid ||
+          get(/databases/$(database)/documents/jobs/$(jobId)).data.assignedWorkerId == request.auth.uid ||
+          isAdmin()
+        );
+        allow list: if false;
+        allow create: if isVerifiedUser()
+          && isValidId(jobId)
+          && docId == 'contact'
+          && isValidJobPrivateContact(incoming())
+          && incoming().clientId == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/jobs/$(jobId))
+          && getAfter(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == request.auth.uid;
+        allow update: if isVerifiedUser()
+          && isValidId(jobId)
+          && docId == 'contact'
+          && isValidJobPrivateContact(incoming())
+          && existing().clientId == request.auth.uid
+          && incoming().clientId == existing().clientId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['contactPhone', 'exactAddress', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      // 5. Bids on an Emergency Job (bidId == workerId)
+      match /bids/{bidId} {
+        allow get: if isValidId(jobId) && isValidId(bidId) && isSignedIn() && (
+          existing().workerId == request.auth.uid ||
+          existing().jobClientId == request.auth.uid ||
+          isAdmin()
+        );
+        allow list: if isSignedIn() && (
+          existing().workerId == request.auth.uid ||
+          existing().jobClientId == request.auth.uid ||
+          isBootstrapAdmin()
+        );
+        allow create: if isVerifiedUser()
+          && isValidId(jobId)
+          && isValidId(bidId)
+          && bidId == request.auth.uid
+          && isValidJobBid(incoming(), jobId, bidId)
+          && incoming().workerId == request.auth.uid
+          && incoming().jobClientId != request.auth.uid
+          && incoming().status == 'pending'
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/workers/$(request.auth.uid))
+          && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'open'
+          && get(/databases/$(database)/documents/jobs/$(jobId)).data.clientId == incoming().jobClientId
+          && getAfter(/databases/$(database)/documents/jobs/$(jobId)).data.bidCount == get(/databases/$(database)/documents/jobs/$(jobId)).data.bidCount + 1;
+        allow update: if isVerifiedUser()
+          && isValidId(jobId)
+          && isValidId(bidId)
+          && isValidJobBid(incoming(), jobId, bidId)
+          && incoming().jobId == existing().jobId
+          && incoming().jobClientId == existing().jobClientId
+          && incoming().workerId == existing().workerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existing().status == 'pending'
+          && (
+            // Action A: Bidder revises their own pending bid while job is open
+            (
+              existing().workerId == request.auth.uid
+              && incoming().status == 'pending'
+              && incoming().diff(existing()).affectedKeys().hasOnly(['chargeAmount', 'estimatedArrival', 'note', 'updatedAt'])
+              && get(/databases/$(database)/documents/jobs/$(jobId)).data.status == 'open'
+            )
+            ||
+            // Action B: Job client accepts or rejects a pending bid
+            (
+              existing().jobClientId == request.auth.uid
+              && incoming().status in ['accepted', 'rejected']
+              && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+            )
+          );
+        allow delete: if false;
+      }
+    }
+  }
+}

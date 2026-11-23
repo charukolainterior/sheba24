@@ -1,0 +1,141 @@
+name: Build Sheba24 Android APK & Play Store AAB
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build APK & AAB (API 36)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build Sheba24 Web & PWA bundle
+        run: npm run build
+
+      - name: Generate Android Launcher Icons & Splash from Sheba24 Logo
+        run: |
+          python3 -m venv /tmp/icon-venv
+          /tmp/icon-venv/bin/pip install --quiet pillow
+          mkdir -p assets
+          /tmp/icon-venv/bin/python - << 'EOF'
+          from PIL import Image
+          src = Image.open("public/pwa-512x512.png").convert("RGBA")
+          icon = Image.new("RGBA", (1024, 1024), (255, 255, 255, 255))
+          resized_icon = src.resize((920, 920), Image.Resampling.LANCZOS)
+          icon.paste(resized_icon, (52, 52), resized_icon)
+          icon.save("assets/icon-only.png")
+          icon.save("assets/icon-foreground.png")
+
+          bg = Image.new("RGBA", (1024, 1024), (255, 255, 255, 255))
+          bg.save("assets/icon-background.png")
+
+          splash = Image.new("RGBA", (2732, 2732), (255, 255, 255, 255))
+          splash_logo = src.resize((900, 900), Image.Resampling.LANCZOS)
+          splash.paste(splash_logo, ((2732 - 900) // 2, (2732 - 900) // 2), splash_logo)
+          splash.save("assets/splash.png")
+          splash.save("assets/splash-dark.png")
+          EOF
+          if [ ! -d android ]; then npx cap add android; fi
+          npx --yes @capacitor/assets generate --android
+
+      - name: Sync Capacitor Android project
+        run: npx cap sync android
+
+      - name: Configure Release Signing Keystore (if secrets provided)
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
+            echo "has_signing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_signing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      - name: Build Direct-Install Debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Build Signed Release APK & Play Store AAB (when keystore configured)
+        if: steps.signing.outputs.has_signing == 'true'
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease bundleRelease
+
+      - name: Build Unsigned Release AAB (when no keystore secret yet)
+        if: steps.signing.outputs.has_signing != 'true'
+        working-directory: android
+        run: ./gradlew bundleRelease
+
+      - name: Collect APK & AAB output files
+        run: |
+          mkdir -p release-output
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-output/sheba24-installable.apk
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk release-output/sheba24-release-signed.apk
+          fi
+          if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
+            cp android/app/build/outputs/bundle/release/app-release.aab release-output/sheba24-playstore.aab
+          fi
+          ls -lh release-output/
+
+      - name: Upload Sheba24 Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sheba24-Android-APK
+          path: release-output/*.apk
+          retention-days: 30
+
+      - name: Upload Sheba24 Google Play AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sheba24-PlayStore-AAB
+          path: release-output/*.aab
+          retention-days: 30
+
+      - name: Publish GitHub Release on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-output/*
+          generate_release_notes: true
